@@ -54,8 +54,9 @@ docs = [
 
 # A few more useful fields...
 [project.urls]
-Homepage = "https://github.com/USERNAME/Probabily_Density_Function-class"
-Issues = "https://github.com/USERNAME/Probabily_Density_Function-class/issues"
+Homepage = "https://github.com/ettoreulivieri/Probabily_Density_Function-class"
+Documentation = "https://ettoreulivieri.github.io/Probabily_Density_Function-class/"
+Issues = "https://github.com/ettoreulivieri/Probabily_Density_Function-class/issues"
 
 # Specify the python file that hatchling should read the version string from.
 [tool.hatch.version]
