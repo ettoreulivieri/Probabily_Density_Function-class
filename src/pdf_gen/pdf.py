@@ -13,6 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Module for continuous Probability Density Function (PDF) estimation and sampling."""
+
+from typing import Union
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import integrate
@@ -30,10 +34,10 @@ class PDF:
 
     Parameters
     ----------
-    x : (N,) array_like
+    x : ArrayLike
         Coordinates of the data points. Values must be strictly increasing.
 
-    y : (N,) array_like
+    y : ArrayLike
         Function values at the corresponding coordinates. Values must be
         non-negative.
 
@@ -54,17 +58,17 @@ class PDF:
     positive and finite.
     """
 
-    def __init__(self, x: ArrayLike, y: ArrayLike, k: int = 3):
+    def __init__(self, x: ArrayLike, y: ArrayLike, k: int = 3) -> None:
         """
         Initialize the PDF object.
 
         Parameters
         ----------
-        x : (N,) array_like
-            Coordinates of the input data points. Values must be strictly
-            increasing.
+        x : ArrayLike
+            Coordinates of the input data points. Values must be
+            strictly increasing.
 
-        y : (N,) array_like
+        y : ArrayLike
             Function values corresponding to the coordinates in `x`.
             All values must be non-negative.
 
@@ -74,18 +78,15 @@ class PDF:
         Raises
         ------
         ValueError
-            If any value of `y` is negative.
-
-        Notes
-        -----
-        The interpolating spline is clipped to zero wherever it becomes
-        negative. Its integral over the input domain is then calculated
-        and used as the normalization factor.
+            If `x` is not strictly increasing, if any value of `y` is negative,
+            or if the integral over the domain is non-positive / non-finite.
         """
         self._x = np.array(x, dtype=float)
         self._y = np.array(y, dtype=float)
         self._k = k
 
+        if np.any(np.diff(self._x) <= 0):  # check if x array is strictly increasing.
+            raise ValueError("ERROR: x values must be increasing.")
         if np.any(self._y < 0):  # checking positivity of y values
             raise ValueError("All y values must be non-negative.")
 
@@ -95,7 +96,8 @@ class PDF:
         self._spl2 = lambda val: np.maximum(0, spl1(val))
 
         area, _ = integrate.quad(self._spl2, self._x[0], self._x[-1])
-
+        if not np.isfinite(area) or area <= 0:
+            raise ValueError("The integral of the PDF must be positive.")
         spl2 = self._spl2
 
         def spl(x_in):
@@ -104,11 +106,23 @@ class PDF:
             return np.where((x_arr >= self._x[0]) & (x_arr <= self._x[-1]), y_val, 0.0)
 
         self._spl = spl
-
         self._norm = area
 
+        n_points = max(10000, int((self._x[-1] - self._x[0]) * 100))
+        self._x_cdf = np.linspace(self._x[0], self._x[-1], n_points)  # creating a grid
+        pdf_values = self._spl(self._x_cdf)  # evaluating spline on the grid
+        self._y_cdf = integrate.cumulative_trapezoid(  # integrating numerically the PDF
+            pdf_values,
+            self._x_cdf,
+            initial=0
+        )
+        # Ensure that the cdf ends at 1
+        self._y_cdf /= self._y_cdf[-1]
+
+        self._rng = np.random.default_rng()  # random numpy generator
+
     @property
-    def normalization(self):
+    def normalization(self) -> float:
         """
         Return the normalization factor of the probability density function.
 
@@ -122,19 +136,18 @@ class PDF:
 
     def valuation(self, x_test: ArrayLike) -> NDArray:
         """
-        Evaluate the normalized probability density function.
+        Evaluate the normalized probability density function at specified points.
 
         Parameters
         ----------
-        x_test : array_like
-            Point or points at which to evaluate the PDF. A scalar or an
-            array of values can be provided.
+        x_test : ArrayLike
+            Point or array of points at which to evaluate the PDF.
 
         Returns
         -------
-        numpy.ndarray
-            Evaluated PDF values. The output is always at least one-dimensional.
-            Values outside the domain [x[0], x[-1]] are intended to be zero.
+        NDArray
+            Evaluated PDF values normalized over the domain [x[0], x[-1]].
+            Values outside this domain evaluate to 0.0.
         """
         x_eval = np.atleast_1d(np.asarray(x_test, dtype=float))
         if np.any((x_eval < self._x[0]) | (x_eval > self._x[-1])):
@@ -143,26 +156,138 @@ class PDF:
 
     def probability(self, a: float, b: float) -> float:
         """
-        Calculate probability of being in the interval [a,b]
+        Calculate the probability over an interval.
 
         Parameters
-        -----------
-        a: float
-            start_point of interval
+        ----------
+        a : float
+            Lower integration limit.
 
-        b: float
-            end_point of interval
+        b : float
+            Upper integration limit.
 
-        returns
-        -----------
+        Returns
+        -------
         float
-            integral of pdf in the interval
+            Integral of the normalized PDF over the interval [a, b].
+
+        Notes
+        -----
+        The probability is calculated by numerical integration of the
+        normalized PDF between `a` and `b`.
+
+        If the interval extends outside the domain of the PDF, the density
+        is zero outside that domain.
+
+        The result represents a probability when a <= b. The method does
+        not currently check explicitly whether `a` is greater than `b`.
         """
         integral_val, _ = integrate.quad(self._spl, a, b)
         return float(integral_val)
 
+    def cdf(self, x_top: float) -> float:
+        """
+        Evaluate the cumulative distribution function (cdf).
 
-def main():
+        Parameters
+        ----------
+        x_top : float
+            Upper integration limit.
+
+        Returns
+        -------
+        float
+            Cumulative probability from the lower boundary of the PDF domain
+            up to `x_top`.
+
+        Notes
+        -----
+        The cdf is defined as
+
+            F(x) = integral from x_min to x of f(t) dt,
+
+        where x_min is the smallest input coordinate and f is the normalized
+        probability density function.
+
+        For values below the domain, the result is zero. For values above
+        the domain, the result is one, up to numerical integration errors.
+        """
+        return self.probability(self._x[0], x_top)
+
+    def cdf_inv(self, p_val: ArrayLike) -> NDArray:
+        """
+        Evaluate the inverse cumulative distribution function.
+
+        Parameters
+        ----------
+        p_val : ArrayLike
+            Scalar or array-like object containing probabilities between
+            zero and one, inclusive.
+
+        Returns
+        -------
+        NDArray
+            One-dimensional NumPy array containing the approximate inverse
+            cdf values corresponding to the input probabilities.
+
+        Raises
+        ------
+        ValueError
+            If any probability is smaller than zero or greater than one.
+
+        Notes
+        -----
+        The inverse cdf is approximated by linear interpolation using the
+        numerically computed cdf grid.
+
+        Repeated cdf values are removed before interpolation to handle
+        intervals where the PDF is zero.
+
+        The inverse cdf is used by the `sample` method to generate random
+        numbers following the reconstructed probability distribution.
+        """
+        p = np.atleast_1d(np.asarray(p_val, dtype=float))
+
+        if np.any((p < 0) | (p > 1)):
+            raise ValueError("Probabilities must be between 0 and 1.")
+
+        y_cdf_unique, indices = np.unique(self._y_cdf, return_index=True)
+        x_unique = self._x_cdf[indices]  # masking
+
+        result = np.interp(p, y_cdf_unique, x_unique)
+
+        return result
+
+    def sample(self, size: Union[int, tuple[int, ...]] = 1) -> NDArray:
+        """
+        Generate random samples distributed according to the PDF.
+
+        Parameters
+        ----------
+        size : int, default=1
+            Number of random samples to generate.
+
+        Returns
+        -------
+        NDArray
+            NumPy array containing the generated random samples.
+
+        Notes
+        -----
+        Random numbers are generated using inverse transform sampling.
+
+        First, uniform random numbers between zero and one are generated.
+        Then, the inverse cdf is applied to transform them into samples
+        following the reconstructed probability distribution.
+
+        The random number generator is initialized once when the PDF
+        object is created and is reused for subsequent calls.
+        """
+        u = self._rng.uniform(0.0, 1.0, size=size)
+        return np.asarray(self.cdf_inv(u))
+
+
+def main() -> None:
     """Execution block for manual testing."""
     x_data = np.array([0, 1, 2, 3, 4, 5, 6])
     y_data = np.array([0, 1, 2, 3, 2, 1, 0])
@@ -172,6 +297,13 @@ def main():
     print(pdf.valuation([-100, 100]))
     print(f"normalization factor = {pdf.normalization}")
     print(f"probability in {x_data[0]}-{x_data[-1]} = {pdf.probability(x_data[0], x_data[-1])}")
+    print("cdf at 3:", pdf.cdf(3))
+    print("Inverse cdf at 0.5:", pdf.cdf_inv(0.5))
+
+    samples = pdf.sample(1000)
+    print("First 10 samples:", samples[:10])
+    print("Minimum sample:", np.min(samples))
+    print("Maximum sample:", np.max(samples))
 
 
 if __name__ == "__main__":
