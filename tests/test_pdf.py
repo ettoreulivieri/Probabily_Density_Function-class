@@ -20,3 +20,9 @@ def test_positive_pdf():
     x_check = np.linspace(x_test[0], x_test[-1], 10000)
     y_check = pdf_test.valuation(x_check)
     assert np.all(y_check >= 0)
+
+def test_CDF():
+    assert pdf_test.CDF(x_test[-1]) == 1
+
+# def test_numerical_integration():
+#     assert pdf_test._y_cdf /= pdf_test._y_cdf[-1]
