@@ -16,6 +16,7 @@
 """Module for continuous Probability Density Function (PDF) estimation and sampling."""
 
 from typing import Union
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import integrate
@@ -115,7 +116,7 @@ class PDF:
             self._x_cdf,
             initial=0
         )
-        # Ensure that the CDF ends at 1
+        # Ensure that the cdf ends at 1
         self._y_cdf /= self._y_cdf[-1]
 
         self._rng = np.random.default_rng()  # random numpy generator
@@ -184,9 +185,9 @@ class PDF:
         integral_val, _ = integrate.quad(self._spl, a, b)
         return float(integral_val)
 
-    def CDF(self, x_top: float) -> float:
+    def cdf(self, x_top: float) -> float:
         """
-        Evaluate the cumulative distribution function (CDF).
+        Evaluate the cumulative distribution function (cdf).
 
         Parameters
         ----------
@@ -201,7 +202,7 @@ class PDF:
 
         Notes
         -----
-        The CDF is defined as
+        The cdf is defined as
 
             F(x) = integral from x_min to x of f(t) dt,
 
@@ -213,7 +214,7 @@ class PDF:
         """
         return self.probability(self._x[0], x_top)
 
-    def CDF_inv(self, p_val: ArrayLike) -> NDArray:
+    def cdf_inv(self, p_val: ArrayLike) -> NDArray:
         """
         Evaluate the inverse cumulative distribution function.
 
@@ -227,7 +228,7 @@ class PDF:
         -------
         NDArray
             One-dimensional NumPy array containing the approximate inverse
-            CDF values corresponding to the input probabilities.
+            cdf values corresponding to the input probabilities.
 
         Raises
         ------
@@ -236,13 +237,13 @@ class PDF:
 
         Notes
         -----
-        The inverse CDF is approximated by linear interpolation using the
-        numerically computed CDF grid.
+        The inverse cdf is approximated by linear interpolation using the
+        numerically computed cdf grid.
 
-        Repeated CDF values are removed before interpolation to handle
+        Repeated cdf values are removed before interpolation to handle
         intervals where the PDF is zero.
 
-        The inverse CDF is used by the `sample` method to generate random
+        The inverse cdf is used by the `sample` method to generate random
         numbers following the reconstructed probability distribution.
         """
         p = np.atleast_1d(np.asarray(p_val, dtype=float))
@@ -276,14 +277,14 @@ class PDF:
         Random numbers are generated using inverse transform sampling.
 
         First, uniform random numbers between zero and one are generated.
-        Then, the inverse CDF is applied to transform them into samples
+        Then, the inverse cdf is applied to transform them into samples
         following the reconstructed probability distribution.
 
         The random number generator is initialized once when the PDF
         object is created and is reused for subsequent calls.
         """
         u = self._rng.uniform(0.0, 1.0, size=size)
-        return np.asarray(self.CDF_inv(u))
+        return np.asarray(self.cdf_inv(u))
 
 
 def main() -> None:
@@ -296,8 +297,8 @@ def main() -> None:
     print(pdf.valuation([-100, 100]))
     print(f"normalization factor = {pdf.normalization}")
     print(f"probability in {x_data[0]}-{x_data[-1]} = {pdf.probability(x_data[0], x_data[-1])}")
-    print("CDF at 3:", pdf.CDF(3))
-    print("Inverse CDF at 0.5:", pdf.CDF_inv(0.5))
+    print("cdf at 3:", pdf.cdf(3))
+    print("Inverse cdf at 0.5:", pdf.cdf_inv(0.5))
 
     samples = pdf.sample(1000)
     print("First 10 samples:", samples[:10])
